@@ -1,3 +1,10 @@
+#### TL;DR 
+```
+cd tests
+npm i
+npx hardhat test
+```
+
 ## NFT Staking DApp
 
 A decentralized application (DApp) that allows users to stake their NFTs and claim rewards interacting with smart contracts on the Ethereum blockchain.

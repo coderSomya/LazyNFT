@@ -4,7 +4,7 @@ const { ethers } = require("hardhat");
 describe("NFTStaking", function () {
   let NFTStaking, nftStaking, MyNFT, myNFT, RewardToken, rewardToken;
   let owner, user1, user2;
-  const rewardCurve = [7, 14, 14, 7];
+  const rewardCurve = [7, 0, 14, 7];
 
   beforeEach(async function () {
     [owner, user1, user2] = await ethers.getSigners();
@@ -89,17 +89,6 @@ describe("NFTStaking", function () {
     });
   });
 
-  describe("Rewards", function () {
-    it("Should calculate rewards correctly", async function () {
-      await nftStaking.connect(user1).stake(1);
-      await ethers.provider.send("evm_increaseTime", [14 * 24 * 60 * 60]); // 14 days
-      await ethers.provider.send("evm_mine");
-      await nftStaking.connect(user1).unstake(1);
-      const expectedReward = 7 * 7 + 73; // 7 days at 7 tokens/day + 7 days with increasing reward
-      expect(await rewardToken.balanceOf(user1.address)).to.equal(expectedReward);
-    });
-  });
-
   describe("Owner functions", function () {
     it("Should allow owner to change lock period", async function () {
       const newLockPeriod = 14 * 24 * 60 * 60; // 14 days
@@ -112,4 +101,72 @@ describe("NFTStaking", function () {
       await expect(nftStaking.connect(user1).setLockPeriod(newLockPeriod)).to.be.reverted;
     });
   });
+
+  describe("Reward Calculation", function () {
+    const DAY = 24 * 60 * 60;
+    async function stakeAndAdvanceTime(user, tokenId, days) {
+      await nftStaking.connect(user).stake(tokenId);
+      await ethers.provider.send("evm_increaseTime", [days * DAY]);
+      await ethers.provider.send("evm_mine");
+    }
+
+    async function getReward(user, tokenId) {
+      await nftStaking.connect(user).unstake(tokenId);
+      const reward = await rewardToken.balanceOf(user.address);
+      await rewardToken.connect(user).transfer(owner.address, reward); // Reset balance for next test
+      return reward;
+    }
+
+    it("Should calculate correct reward for 7 days (end of first segment)", async function () {
+      await stakeAndAdvanceTime(user1, 1, 7);
+      const reward = await getReward(user1, 1);
+      expect(reward).to.equal(7 * 7); // 7 days * 7 tokens per day
+    });
+
+    it("Should calculate correct reward for 10 days (middle of second segment)", async function () {
+      await stakeAndAdvanceTime(user1, 1, 10);
+      const reward = await getReward(user1, 1);
+      expect(reward).to.equal(7 * 7 + (8 + 9 + 10)); // 7 days * 7 + sum of days 8, 9, 10
+    });
+
+    it("Should calculate correct reward for 14 days (end of second segment)", async function () {
+      await stakeAndAdvanceTime(user1, 1, 14);
+      const reward = await getReward(user1, 1);
+      expect(reward).to.equal(7 * 7 + (8 + 9 + 10 + 11 + 12 + 13 + 14)); // 7 days * 7 + sum of days 8 to 14
+    });
+
+    it("Should calculate correct reward for 18 days (middle of third segment)", async function () {
+      await stakeAndAdvanceTime(user1, 1, 18);
+      const reward = await getReward(user1, 1);
+      expect(reward).to.equal(7 * 7 + (8 + 9 + 10 + 11 + 12 + 13 + 14) + (4 * 14)); // First two segments + 4 days * 14
+    });
+
+    it("Should calculate correct reward for 21 days (end of third segment)", async function () {
+      await stakeAndAdvanceTime(user1, 1, 21);
+      const reward = await getReward(user1, 1);
+      expect(reward).to.equal(7 * 7 + (8 + 9 + 10 + 11 + 12 + 13 + 14) + (7 * 14)); // First two segments + 7 days * 14
+    });
+
+    it("Should calculate correct reward for 25 days (middle of fourth segment)", async function () {
+      await stakeAndAdvanceTime(user1, 1, 25);
+      const reward = await getReward(user1, 1);
+      const fourthSegmentReward = (22 - 7) + (23 - 7) + (24 - 7) + (25 - 7);
+      expect(reward).to.equal(7 * 7 + (8 + 9 + 10 + 11 + 12 + 13 + 14) + (7 * 14) + fourthSegmentReward);
+    });
+
+    it("Should calculate correct reward for 28 days (end of fourth segment)", async function () {
+      await stakeAndAdvanceTime(user1, 1, 28);
+      const reward = await getReward(user1, 1);
+      const fourthSegmentReward = (22 - 7) + (23 - 7) + (24 - 7) + (25 - 7) + (26 - 7) + (27 - 7) + (28 - 7);
+      expect(reward).to.equal(7 * 7 + (8 + 9 + 10 + 11 + 12 + 13 + 14) + (7 * 14) + fourthSegmentReward);
+    });
+
+    it("Should cap rewards at 28 days", async function () {
+      await stakeAndAdvanceTime(user1, 1, 35);
+      const reward = await getReward(user1, 1);
+      const fourthSegmentReward = (22 - 7) + (23 - 7) + (24 - 7) + (25 - 7) + (26 - 7) + (27 - 7) + (28 - 7);
+      expect(reward).to.equal(7 * 7 + (8 + 9 + 10 + 11 + 12 + 13 + 14) + (7 * 14) + fourthSegmentReward);
+    });
+  });
+
 });

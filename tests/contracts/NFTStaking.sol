@@ -18,6 +18,12 @@ contract NFTStaking is Ownable {
     error AlreadyStaked();
 
 
+/*
+
+0x4938 -> 3 -> Stake(3, 493, true)
+ox403 -> 3 -> 78
+ox403 -> 4 -> 100
+*/
     mapping(address => mapping (uint256 => Stake)) public stakedNFTs;
     mapping(address => mapping(uint256 => uint256)) public rewards;
 
@@ -41,8 +47,6 @@ contract NFTStaking is Ownable {
     }
 
     function stake(uint256 tokenId) external {
-      // require(nftCollection.ownerOf(tokenId) == msg.sender, "You don't own this NFT");
-        // require(!stakedNFTs[msg.sender][tokenId].isActive, "Already staked");
 
         if (stakedNFTs[msg.sender][tokenId].isActive) revert ("Already staked");
         if (nftCollection.ownerOf(tokenId) != msg.sender) revert ("You don't own this NFT");
@@ -71,7 +75,9 @@ contract NFTStaking is Ownable {
     }
 
     function calculateAreaUnderCurve(uint256 x, uint256[4] memory rc) view private returns (uint256) {
+        if (x>28) x=28;
         uint256 totalArea = 0;
+
         
         // First interval: 0 < x <= 7, f(x) = 7
         if (x <= 7) {
@@ -83,10 +89,11 @@ contract NFTStaking is Ownable {
 
         // Second interval: 7 < x <= 14, f(x) = x
         if (x <= 14) {
-            totalArea += ((x - 7) * (x + 7)) / 2;
+            // we sum 8 + 9 + 10 + .. x
+            totalArea += (x*(x+1))/2 - (7*8)/2 - rewardCurve[1]*(x-7);
             return totalArea;
         } else {
-            totalArea+= 73; //((14 - 7) * (14 + 7)) / 2;
+            totalArea+= 77 - rewardCurve[1]*(x-7); // 8+ 9+ ... + 14
         }
 
         // Third interval: 14 < x <= 21, f(x) = 14
@@ -99,11 +106,14 @@ contract NFTStaking is Ownable {
 
         // Fourth interval: 21 < x <= 28, f(x) = x - 7
         if (x <= 28) {
-            totalArea += ((x - 21) * (x - rewardCurve[3] + 14)) / 2; 
+            totalArea += (x*(x+1))/2  - (21*22)/2 - rewardCurve[3]*(x-21);
             return totalArea;
         } else {
-            totalArea += ((28 - 21) * (28 - rewardCurve[3] + 14)) / 2;
+            totalArea += (28*(28+1))/2  - (21*22)/2 - rewardCurve[3]*(28-21);
         }
+
+
+        // rewards[user][tokenId] = totalArea;
 
         return totalArea;
     }
@@ -125,6 +135,7 @@ contract NFTStaking is Ownable {
         require(reward > 0, "No rewards to claim");
         
         rewards[msg.sender][tokenId] = 0;
+
         rewardToken.transfer(msg.sender, reward);
 
         emit Claimed(msg.sender, reward);
